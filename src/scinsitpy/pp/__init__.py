@@ -1,1 +1,5 @@
-from .basic import basic_preproc
+from .basic import filter_and_run_scanpy
+
+__all__ = [
+    "filter_and_run_scanpy",
+]

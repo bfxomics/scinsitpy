@@ -32,6 +32,8 @@ dependencies = [
     "tifffile",
     "seaborn",
     "matplotlib",
+    "geopandas",
+    "shapely",
     # for debug logging (referenced from the issue template)
     "session-info"
 ]
