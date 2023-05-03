@@ -37,7 +37,7 @@ dependencies = [
     "observable_jupyter",
     "clustergrammer2",
     "zlib",
-    "skimage",
+    "scikit-image",
     "scvi",
     # for debug logging (referenced from the issue template)
     "session-info"
