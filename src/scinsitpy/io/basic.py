@@ -153,26 +153,6 @@ def load_transcript(path: str, transformation_matrix: str, scale_percent: int) -
     return transcripts
 
 
-# def load_bounds_micron(adata, folder):
-#    adata.obs["bounds"] = np.array(adata.obs.shape[0], dtype = object)
-#    z_indexes = ['0','1','2','3','4','5','6']
-#    for fov in pd.unique(adata.obs["fov"]):
-#        #try:
-#            with h5py.File(f"{folder}/cell_boundaries/feature_data_{fov}.hdf5","r") as f:
-#                print(fov)
-#                for cell_id in adata.obs.index[adata.obs["fov"] == fov]:
-#                    for z in z_indexes:
-#                        node = f"featuredata/{cell_id}/zIndex_{z}/p_0/coordinates"
-#                        if node in f.keys():
-#                            adata.obs["bounds"][cell_id] = np.array(f[node][0])
-#                        #else:
-#                        #    print(node + " not found")
-#        #except:
-#        #     pass
-#
-#    return adata
-
-
 def load_bounds_pixel(adata: an.Anndata, library_id: str) -> an.AnnData:
     """Load cell boundaries in pixel coordinates in adata.obs["bounds"].
 
