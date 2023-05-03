@@ -34,6 +34,13 @@ dependencies = [
     "matplotlib",
     "geopandas",
     "shapely",
+    "observable_jupyter",
+    "clustergrammer2",
+    "zlib",
+    "json",
+    "base64",
+    "skimage",
+    "scvi",
     # for debug logging (referenced from the issue template)
     "session-info"
 ]

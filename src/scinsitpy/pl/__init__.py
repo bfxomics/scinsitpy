@@ -1,1 +1,1 @@
-from .basic import scinsit_compartment, scinsit_crop, scinsit_qc
+from .basic import embed_vizgen, view_pop, view_qc, view_region

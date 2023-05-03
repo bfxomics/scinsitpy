@@ -1,17 +1,24 @@
+import base64
+import json
+import zlib
+
 import anndata as an
 import numpy as np
 import pandas as pd
 import scanpy as sc
 import seaborn as sns
 import squidpy as sq
+from clustergrammer2 import CGM2, Network
 from matplotlib import pyplot as plt
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Polygon as mplPolygon
+from observable_jupyter import embed
+from skimage import exposure, img_as_float
 
 from scinsitpy.io.basic import get_palette, load_bounds_pixel
 
 
-def scinsit_crop(
+def view_region(
     adata: an.AnnData,
     library_id: str,
     color_key: str,
@@ -150,7 +157,7 @@ def scinsit_crop(
     return adata_crop
 
 
-def scinsit_qc(adata: an.AnnData, library_id: str) -> int:
+def view_qc(adata: an.AnnData, library_id: str) -> int:
     """Scinsit quality control plot.
 
     Parameters
@@ -188,7 +195,7 @@ def scinsit_qc(adata: an.AnnData, library_id: str) -> int:
     return 0
 
 
-def scinsit_compartment(
+def view_pop(
     adata: an.AnnData, celltypelabel: str = "celltype", metalabel: str = "population", figsize: tuple = (20, 5)
 ):
     """Scinsit compartment plot.
@@ -225,3 +232,324 @@ def scinsit_compartment(
     plt.setp(ax2.get_legend().get_texts(), fontsize="6")
     plt.setp(ax3.get_legend().get_texts(), fontsize="6")
     plt.setp(ax4.get_legend().get_texts(), fontsize="6")
+
+
+def json_zip(j):
+    """Json zipper"""
+    zip_json_string = base64.b64encode(zlib.compress(json.dumps(j).encode("utf-8"))).decode("ascii")
+    return zip_json_string
+
+
+def embed_vizgen(adata: an.AnnData, color_key: str):
+    """Embed vizgen assay (Nicolas Fernandez credit).
+
+    Parameters
+    ----------
+    adata
+        Anndata object.
+    color_key
+        color key.
+
+    Returns
+    -------
+    Return the Anndata object of the crop region.
+    """
+    cats = adata.obs[color_key].cat.categories.tolist()
+    colors = list(adata.uns[color_key + "_colors"])
+    cat_colors = dict(zip(cats, colors))
+    ser_color = pd.Series(cat_colors)
+    ser_color.name = "color"
+    df_colors = pd.DataFrame(ser_color)
+    df_colors.index = [str(x) for x in df_colors.index.tolist()]
+
+    ser_counts = adata.obs[color_key].value_counts()
+    ser_counts.name = "cell counts"
+    meta_leiden = pd.DataFrame(ser_counts)
+    sig_leiden = pd.DataFrame(columns=adata.var_names, index=adata.obs[color_key].cat.categories)
+    for clust in adata.obs[color_key].cat.categories:
+        sig_leiden.loc[clust] = adata[adata.obs[color_key].isin([clust]), :].X.mean(0)
+
+    sig_leiden = sig_leiden.transpose()
+    leiden_clusters = [str(x) for x in sig_leiden.columns.tolist()]
+    sig_leiden.columns = leiden_clusters
+    meta_leiden.index = sig_leiden.columns.tolist()
+    meta_leiden[color_key] = pd.Series(meta_leiden.index.tolist(), index=meta_leiden.index.tolist())
+
+    net = Network(CGM2)
+    # net.load_df(sig_leiden, meta_col=meta_leiden, col_cats=['cell counts'])
+    net.load_df(
+        sig_leiden,
+        meta_col=meta_leiden,
+        col_cats=[color_key, "cell counts"],
+        meta_row=adata.var,
+        row_cats=["mean", "expression"],
+    )
+    net.filter_threshold(0.01, axis="row")
+    net.normalize(axis="row", norm_type="zscore")
+    net.set_global_cat_colors(df_colors)
+    net.cluster()
+
+    gex_int = pd.DataFrame(adata.layers["counts"], index=adata.obs.index.copy(), columns=adata.var_names).astype(np.int)
+    gex_dict = {}
+    for inst_gene in gex_int.columns.tolist():
+        if "Blank" not in inst_gene:
+            ser_gene = gex_int[inst_gene]
+            ser_gene = ser_gene[ser_gene > 0]
+            ser_gene = ser_gene.astype(np.int8)
+            gex_dict[inst_gene] = ser_gene.to_dict()
+
+    df_pos = adata.obs[["center_x", "center_y", color_key]]
+    df_pos[["center_x", "center_y"]] = df_pos[["center_x", "center_y"]].round(2)
+    df_pos.columns = ["x", "y", "leiden"]
+    df_pos["y"] = -df_pos["y"]
+    df_umap = adata.obsm.to_df()[["X_umap1", "X_umap2"]].round(2)
+    df_umap.columns = ["umap-x", "umap-y"]
+
+    # rotate the mouse brain to the upright position
+    # theta = np.deg2rad(-15)
+    # rot = np.array([[cos(theta), -sin(theta)], [sin(theta), cos(theta)]])
+    # df_pos[['x', 'y']] = df_pos[['x', 'y']].dot(rot)
+
+    df_name = pd.DataFrame(df_pos.index.tolist(), index=df_pos.index.tolist(), columns=["name"])
+
+    df_obs = pd.concat([df_name, df_pos, df_umap], axis=1)
+    data = df_obs.to_dict("records")
+
+    obs_data = {"gex_dict": gex_dict, "data": data, "cat_colors": cat_colors, "network": net.viz}
+
+    zip_obs_data = json_zip(obs_data)
+
+    inputs = {
+        "zoom": -3.5,
+        "ini_cat": color_key,
+        "ini_map_type": "UMAP",
+        "ini_min_radius": 1.75,
+        "zip_obs_data": zip_obs_data,
+        "gex_opacity_contrast_scale": 0.85,
+    }
+
+    embed(
+        "@vizgen/umap-spatial-heatmap-single-cell-0-3-0",
+        cells=["viewof cgm", "dashboard"],
+        inputs=inputs,
+        display_logo=False,
+    )
+
+
+def getFovCoordinates(fov: int, meta_cell: pd.DataFrame) -> tuple:
+    """Return fov coordinates
+
+    Parameters
+    ----------
+    fov
+        fov number.
+    meta_cell
+        cell metadata.
+
+    Returns
+    -------
+    Return fov coordinates.
+    """
+    xmin = meta_cell.x[meta_cell.fov == fov].min()
+    ymin = meta_cell.y[meta_cell.fov == fov].min()
+    xmax = meta_cell.x[meta_cell.fov == fov].max()
+    ymax = meta_cell.y[meta_cell.fov == fov].max()
+
+    return (xmin, ymin, xmax, ymax)
+
+
+def plot_img_and_hist(image: np.ndarray, axes: int, bins: int = 256):
+    """Plot an image along with its histogram and cumulative histogram."""
+    image = img_as_float(image)
+    ax_img, ax_hist = axes
+    ax_cdf = ax_hist.twinx()
+
+    # Display image
+    ax_img.imshow(image)
+    ax_img.set_axis_off()
+
+    # Display histogram
+    ax_hist.hist(image.ravel(), bins=bins, histtype="step", color="black")
+    ax_hist.ticklabel_format(axis="y", style="scientific", scilimits=(0, 0))
+    ax_hist.set_xlabel("Pixel intensity")
+    ax_hist.set_xlim(0, 1)
+    ax_hist.set_yticks([])
+
+    # Display cumulative distribution
+    img_cdf, bins = exposure.cumulative_distribution(image, bins)
+    ax_cdf.plot(bins, img_cdf, "r")
+    ax_cdf.set_yticks([])
+
+    return ax_img, ax_hist, ax_cdf
+
+
+def plot_contrast_panels(img: np.ndarray) -> int:
+    """Test different contrasts for image received."""
+    # Contrast stretching
+    p2, p98 = np.percentile(img, (2, 98))
+    img_rescale = exposure.rescale_intensity(img, in_range=(p2, p98))
+
+    # Equalization
+    img_eq = exposure.equalize_hist(img)
+
+    # Adaptive Equalization
+    img_adapteq = exposure.equalize_adapthist(img, clip_limit=0.03)
+
+    # Display results
+    fig = plt.figure(figsize=(12, 8))
+    axes = np.zeros((2, 4), dtype=object)
+    axes[0, 0] = fig.add_subplot(2, 4, 1)
+    for i in range(1, 4):
+        axes[0, i] = fig.add_subplot(2, 4, 1 + i, sharex=axes[0, 0], sharey=axes[0, 0])
+    for i in range(0, 4):
+        axes[1, i] = fig.add_subplot(2, 4, 5 + i)
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img, axes[:, 0])
+    ax_img.set_title("Original image")
+
+    y_min, y_max = ax_hist.get_ylim()
+    ax_hist.set_ylabel("Number of pixels")
+    ax_hist.set_yticks(np.linspace(0, y_max, 5))
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img_rescale, axes[:, 1])
+    ax_img.set_title("Contrast stretching")
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img_eq, axes[:, 2])
+    ax_img.set_title("Histogram equalization")
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img_adapteq, axes[:, 3])
+    ax_img.set_title("Adaptive equalization")
+
+    ax_cdf.set_ylabel("Fraction of total intensity")
+    ax_cdf.set_yticks(np.linspace(0, 1, 5))
+
+    # prevent overlap of y-axis labels
+    fig.tight_layout()
+    plt.show()
+
+    return 1
+
+
+def plot_gamma_panels(img: np.ndarray) -> int:
+    """Test different correction for image received."""
+    # Gamma
+    gamma_corrected = exposure.adjust_gamma(img, 2)
+
+    # Logarithmic
+    logarithmic_corrected = exposure.adjust_log(img, 1)
+
+    # Display results
+    fig = plt.figure(figsize=(8, 5))
+    axes = np.zeros((2, 3), dtype=object)
+    axes[0, 0] = plt.subplot(2, 3, 1)
+    axes[0, 1] = plt.subplot(2, 3, 2, sharex=axes[0, 0], sharey=axes[0, 0])
+    axes[0, 2] = plt.subplot(2, 3, 3, sharex=axes[0, 0], sharey=axes[0, 0])
+    axes[1, 0] = plt.subplot(2, 3, 4)
+    axes[1, 1] = plt.subplot(2, 3, 5)
+    axes[1, 2] = plt.subplot(2, 3, 6)
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img, axes[:, 0])
+    ax_img.set_title("Original image")
+
+    y_min, y_max = ax_hist.get_ylim()
+    ax_hist.set_ylabel("Number of pixels")
+    ax_hist.set_yticks(np.linspace(0, y_max, 5))
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(gamma_corrected, axes[:, 1])
+    ax_img.set_title("Gamma correction")
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(logarithmic_corrected, axes[:, 2])
+    ax_img.set_title("Logarithmic correction")
+
+    ax_cdf.set_ylabel("Fraction of total intensity")
+    ax_cdf.set_yticks(np.linspace(0, 1, 5))
+
+    # prevent overlap of y-axis labels
+    fig.tight_layout()
+    plt.show()
+
+    return 1
+
+
+def plot_adaptive_size_panels(img: np.ndarray, clip_limit: float) -> int:
+    """Test different kernel_size for exposure.equalize_adapthist of image received."""
+    # Adaptive Equalization
+    img_1 = exposure.equalize_adapthist(img, clip_limit=clip_limit)
+    img_2 = exposure.equalize_adapthist(img, clip_limit=clip_limit, kernel_size=[100, 100])
+    img_3 = exposure.equalize_adapthist(img, clip_limit=clip_limit, kernel_size=[1000, 1000])
+
+    # Display results
+    fig = plt.figure(figsize=(12, 8))
+    axes = np.zeros((2, 4), dtype=object)
+    axes[0, 0] = fig.add_subplot(2, 4, 1)
+    for i in range(1, 4):
+        axes[0, i] = fig.add_subplot(2, 4, 1 + i, sharex=axes[0, 0], sharey=axes[0, 0])
+    for i in range(0, 4):
+        axes[1, i] = fig.add_subplot(2, 4, 5 + i)
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img, axes[:, 0])
+    ax_img.set_title("Original image")
+
+    y_min, y_max = ax_hist.get_ylim()
+    ax_hist.set_ylabel("Number of pixels")
+    ax_hist.set_yticks(np.linspace(0, y_max, 5))
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img_1, axes[:, 1])
+    ax_img.set_title("adapt " + str(clip_limit) + ", default size 1/8")
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img_2, axes[:, 2])
+    ax_img.set_title("adapt " + str(clip_limit) + ", size 100p")
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img_3, axes[:, 3])
+    ax_img.set_title("adapt " + str(clip_limit) + ", size 1kp")
+
+    ax_cdf.set_ylabel("Fraction of total intensity")
+    ax_cdf.set_yticks(np.linspace(0, 1, 5))
+
+    # prevent overlap of y-axis labels
+    fig.tight_layout()
+    plt.show()
+
+    return 1
+
+
+def plot_adaptive_panels(img: np.ndarray) -> int:
+    """Test different clip_limit for exposure.equalize_adapthist of image received."""
+    # Adaptive Equalization
+    img_001 = exposure.equalize_adapthist(img, clip_limit=0.01)
+    img_003 = exposure.equalize_adapthist(img, clip_limit=0.03)
+    img_01 = exposure.equalize_adapthist(img, clip_limit=0.1)
+
+    # Display results
+    fig = plt.figure(figsize=(12, 8))
+    axes = np.zeros((2, 4), dtype=object)
+    axes[0, 0] = fig.add_subplot(2, 4, 1)
+    for i in range(1, 4):
+        axes[0, i] = fig.add_subplot(2, 4, 1 + i, sharex=axes[0, 0], sharey=axes[0, 0])
+    for i in range(0, 4):
+        axes[1, i] = fig.add_subplot(2, 4, 5 + i)
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img, axes[:, 0])
+    ax_img.set_title("Original image")
+
+    y_min, y_max = ax_hist.get_ylim()
+    ax_hist.set_ylabel("Number of pixels")
+    ax_hist.set_yticks(np.linspace(0, y_max, 5))
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img_001, axes[:, 1])
+    ax_img.set_title("adapt 0.01")
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img_003, axes[:, 2])
+    ax_img.set_title("adapt 0.03")
+
+    ax_img, ax_hist, ax_cdf = plot_img_and_hist(img_01, axes[:, 3])
+    ax_img.set_title("adapt 0.1")
+
+    ax_cdf.set_ylabel("Fraction of total intensity")
+    ax_cdf.set_yticks(np.linspace(0, 1, 5))
+
+    # prevent overlap of y-axis labels
+    fig.tight_layout()
+    plt.show()
+
+    return 1

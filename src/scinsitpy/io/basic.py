@@ -235,7 +235,7 @@ def load_parquet(adata: an.AnnData, library_id: str) -> an.AnnData:
 
 
 def get_palette(color_key: str) -> dict:
-    """Scinsit palette definition for specific project.
+    """Scinsit palette definition for a specific Htap project.
 
     Parameters
     ----------
