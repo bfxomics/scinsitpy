@@ -39,7 +39,7 @@ def scinsit_crop(
 
     Returns
     -------
-    Return the Anndata object of the crop region.
+    Return the AnnData object of the crop region.
     """
     img = sq.im.ImageContainer(adata.uns["spatial"][library_id]["images"]["hires"], library_id=library_id)
 
@@ -150,7 +150,7 @@ def scinsit_crop(
     return adata_crop
 
 
-def scinsit_qc(adata: an.Anndata, library_id: str) -> int:
+def scinsit_qc(adata: an.AnnData, library_id: str) -> int:
     """Scinsit quality control plot.
 
     Parameters
@@ -189,7 +189,7 @@ def scinsit_qc(adata: an.Anndata, library_id: str) -> int:
 
 
 def scinsit_compartment(
-    adata: an.Anndata, celltypelabel: str = "celltype", metalabel: str = "population", figsize: tuple = (20, 5)
+    adata: an.AnnData, celltypelabel: str = "celltype", metalabel: str = "population", figsize: tuple = (20, 5)
 ):
     """Scinsit compartment plot.
 

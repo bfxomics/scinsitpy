@@ -153,7 +153,7 @@ def load_transcript(path: str, transformation_matrix: str, scale_percent: int) -
     return transcripts
 
 
-def load_bounds_pixel(adata: an.Anndata, library_id: str) -> an.AnnData:
+def load_bounds_pixel(adata: an.AnnData, library_id: str) -> an.AnnData:
     """Load cell boundaries in pixel coordinates in adata.obs["bounds"].
 
     Parameters
@@ -204,7 +204,7 @@ def load_bounds_pixel(adata: an.Anndata, library_id: str) -> an.AnnData:
     return adata
 
 
-def load_parquet(adata: an.Anndata, library_id: str) -> an.AnnData:
+def load_parquet(adata: an.AnnData, library_id: str) -> an.AnnData:
     """Load cell boundaries as parquet file in pixel coordinates in adata.obs["bounds"].
 
     Parameters
