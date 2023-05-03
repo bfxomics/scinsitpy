@@ -193,7 +193,13 @@ def load_bounds_pixel(adata: an.AnnData, library_id: str) -> an.AnnData:
                             ] * (scale_percent / 100)
                             adata.obs["bounds"][cell_id] = transformedBoundary
     else:
-        df = gpd.read_parquet(folder + "/cellpose_mosaic_space.parquet")
+        parquet_file = ""
+        if os.path.isfile(folder + "/cellpose_mosaic_space.parquet"):
+            parquet_file = folder + "/cellpose_mosaic_space.parquet"
+        elif os.path.isfile(folder + "/cell_boundaries.parquet"):
+            parquet_file = folder + "/cell_boundaries.parquet"
+
+        df = gpd.read_parquet(parquet_file)
         for cell_id in df.index:
             if str(df.EntityID[cell_id]) in adata.obs.index:
                 temp = np.asarray(df.Geometry[cell_id][0].exterior.coords.xy)
