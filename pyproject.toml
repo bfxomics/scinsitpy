@@ -36,7 +36,6 @@ dependencies = [
     "shapely",
     "observable_jupyter",
     "clustergrammer2",
-    "zlib",
     "scikit-image",
     "scvi",
     # for debug logging (referenced from the issue template)
