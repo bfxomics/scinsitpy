@@ -154,7 +154,7 @@ def load_transcript(path: str, transformation_matrix: str, scale_percent: int) -
 
 
 def load_bounds_pixel(adata: an.AnnData, library_id: str) -> an.AnnData:
-    """Load cell boundaries in pixel coordinates in adata.obs["bounds"].
+    """Load cell boundaries and convert from micron to pixel coordinates in adata.obs["bounds"].
 
     Parameters
     ----------
@@ -194,8 +194,8 @@ def load_bounds_pixel(adata: an.AnnData, library_id: str) -> an.AnnData:
                             adata.obs["bounds"][cell_id] = transformedBoundary
     else:
         parquet_file = ""
-        if os.path.isfile(folder + "/cellpose_mosaic_space.parquet"):
-            parquet_file = folder + "/cellpose_mosaic_space.parquet"
+        if os.path.isfile(folder + "/cellpose_micron_space.parquet"):
+            parquet_file = folder + "/cellpose_micron_space.parquet"
         elif os.path.isfile(folder + "/cell_boundaries.parquet"):
             parquet_file = folder + "/cell_boundaries.parquet"
 
@@ -204,7 +204,11 @@ def load_bounds_pixel(adata: an.AnnData, library_id: str) -> an.AnnData:
             if str(df.EntityID[cell_id]) in adata.obs.index:
                 temp = np.asarray(df.Geometry[cell_id][0].exterior.coords.xy)
                 boundaryPolygon = np.array([temp[0], temp[1], np.ones((temp.shape[1],))]).T
-                transformedBoundary = np.transpose(boundaryPolygon)[:-1] * (scale_percent / 100)
+                transformedBoundary = np.matmul(transformation_matrix, np.transpose(boundaryPolygon))[:-1] * (
+                    scale_percent / 100
+                )
+                # case its mosaic -> no conversion
+                # transformedBoundary = np.transpose(boundaryPolygon)[:-1] * (scale_percent / 100)
                 adata.obs.bounds.loc[str(df.EntityID[cell_id])] = transformedBoundary
 
     return adata
