@@ -3,12 +3,12 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import scvi
-import seaborn as sns
+import squidpy as sq
 from matplotlib import pyplot as plt
 from sklearn.neighbors import KNeighborsTransformer
 
 
-def filter_and_run_scanpy(adata: an.AnnData, min_counts: int) -> an.AnnData:
+def filter_and_run_scanpy(adata: an.AnnData, min_counts: int = 10, resolution: float = 0.5) -> an.AnnData:
     """Filter and run scanpy analysis.
 
     Parameters
@@ -35,11 +35,12 @@ def filter_and_run_scanpy(adata: an.AnnData, min_counts: int) -> an.AnnData:
     sc.tl.pca(adata, svd_solver="arpack")
     sc.pp.neighbors(adata, n_neighbors=10)
     sc.tl.umap(adata)
-    sc.tl.leiden(adata, resolution=0.5, key_added="clusters")
+    sc.tl.leiden(adata, resolution=resolution, key_added="clusters")
 
     fig, axs = plt.subplots(1, 2, figsize=(20, 6))
     sc.pl.embedding(adata, "umap", color="clusters", ax=axs[0], show=False)
-    sns.scatterplot(x="x_pix", y="y_pix", data=adata.obs, s=2, hue="clusters")
+    sq.pl.spatial_scatter(adata, color="clusters", shape=None, size=1, ax=axs[1], show=False)
+    plt.tight_layout()
 
     return adata
 
